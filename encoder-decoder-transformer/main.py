@@ -38,6 +38,13 @@ def get_enc_dec_mask(b: int, max_lable_len: int, max_feat_len: int, feat_lens: t
         attn_mask[i, :, feat_lens[i]:] = 1
     return attn_mask.to(torch.bool)
 
+def pos_sinusoid_embedding(seq_len: int, d_model:int) -> torch.Tensor:
+    embedding = torch.zeros((seq_len, d_model))
+    for i in range(d_model):
+        f = torch.sin if i % 2 == 0 else torch.cos
+        embedding[:, i] = f(torch.arange(0, seq_len) / np.power(1e4, 2 * (i // 2) / d_model))
+    return embedding.float()
+
 class MultiHeadAttention(nn.Module):
     def __init__ (self, d_k, d_v, d_model, num_heads, p=0.):
         """
@@ -100,6 +107,8 @@ class MultiHeadAttention(nn.Module):
         output = output.transpose(1, 2).contiguous().reshape(V, q_len, num_heads * d_v)
         output = self.W_out(output)
         return output
+
+
 
 
 if __name__ == "__main__":
