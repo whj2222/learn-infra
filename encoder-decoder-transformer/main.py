@@ -45,6 +45,21 @@ def pos_sinusoid_embedding(seq_len: int, d_model:int) -> torch.Tensor:
         embedding[:, i] = f(torch.arange(0, seq_len) / np.power(1e4, 2 * (i // 2) / d_model))
     return embedding.float()
 
+class PoswiseFFN(nn.Module):
+    def __init__(self, d_model: int, d_ff: int, p: float=0.):
+        super(PoswiseFFN, self).__init__()
+        self.fc1 = nn.Linear(d_model, d_ff)
+        self.fc2 = nn.Linear(d_ff, d_model)
+        self.relu = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout(p=p)
+
+    def forward(self, x):
+        out = self.fc1(x)
+        out = self.relu(out)
+        out = self.fc2(out)
+        return self.dropout(out)
+
+
 class MultiHeadAttention(nn.Module):
     def __init__ (self, d_k, d_v, d_model, num_heads, p=0.):
         """
