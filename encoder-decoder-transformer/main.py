@@ -123,6 +123,26 @@ class MultiHeadAttention(nn.Module):
         output = self.W_out(output)
         return output
 
+class EncoderLayer(nn.Module):
+    def __init__(self, dim: int, n: int, dff: int, dropout_posffn: float, dropout_attn: float):
+        assert dim % n == 0
+        super(EncoderLayer, self).__init__()
+        hdim = dim // n
+
+        self.norm1 = nn.LayerNorm()
+        self.norm2 = nn.LayerNorm()
+        self.multi_head_attn = MultiHeadAttention(hdim, hdim, dim, n, dropout_attn)
+        self.poswise_ffn = PoswiseFFN(dim, dff, dropout_posffn)
+
+    def forward(self, enc_in, attn_mask):
+        residual = enc_in
+        context = self.multi_head_attn(enc_in, enc_in, enc_in, attn_mask)
+        out = self.norm1(context + residual)
+        
+        residual = out
+        out = self.poswise_ffn(out)
+        out = self.norm2(out + residual)
+        return out
 
 
 
