@@ -195,6 +195,30 @@ class DecoderLayer(nn.Module):
         dec_out = self.norm3(dec_out + residual)
         return dec_out
 
+class Decoder(nn.Module):
+    def __init__(self, dropout_emb, dropout_posffn, dropout_attn,
+                 num_layers, dec_dim, num_heads, dff, tgt_len, tgt_vocab_size):
+        super(Decoder, self).__init__()
+        # Word Embedding：将 token ID 映射为 d_model 维向量
+        self.tgt_emb = nn.Embedding(tgt_vocab_size, dec_dim)
+        self.dropout_emb = nn.Dropout(p=dropout_emb)
+        # 固定正弦位置编码
+        self.pos_emb = nn.Embedding.from_pretrained(
+            pos_sinusoid_embedding(tgt_len, dec_dim), freeze=True
+        )
+        self.layers = nn.ModuleList(
+            [DecoderLayer(dec_dim, num_heads, dff, dropout_posffn, dropout_attn)
+             for _ in range(num_layers)]
+        )
+
+    def forward(self, labels, enc_out, dec_mask, dec_enc_mask):
+        # labels: (batch, dec_len) token ID 序列
+        tgt_emb = self.tgt_emb(labels)
+        pos_emb = self.pos_emb(torch.arange(labels.size(1), device=labels.device))
+        dec_out = self.dropout_emb(tgt_emb + pos_emb)
+        for layer in self.layers:
+            dec_out = layer(dec_out, enc_out, dec_mask, dec_enc_mask)
+        return dec_out
 
 
 
