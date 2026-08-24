@@ -257,4 +257,29 @@ class Transformer(nn.Module):
 
 
 if __name__ == "__main__":
-    print(torch.__version__)
+    batch_size    = 16
+    max_feat_len  = 100    # Encoder 输入序列最大长度
+    max_label_len = 50     # Decoder 目标序列最大长度
+    fbank_dim     = 80     # 输入特征维度（如 80 维 Fbank）
+    hidden_dim    = 512    # d_model
+    vocab_size    = 26     # 词表大小
+
+    fbank_feature = torch.randn(batch_size, max_feat_len, fbank_dim)
+    feat_lens     = torch.randint(1, max_feat_len, (batch_size,))
+    labels        = torch.randint(0, vocab_size, (batch_size, max_label_len))
+
+    feature_extractor = nn.Linear(fbank_dim, hidden_dim)
+    encoder = Encoder(
+        dropout_emb=0.1, dropout_posffn=0.1, dropout_attn=0.,
+        num_layers=6, enc_dim=hidden_dim, num_heads=8, dff=2048, tgt_len=2048,
+    )
+    decoder = Decoder(
+        dropout_emb=0.1, dropout_posffn=0.1, dropout_attn=0.,
+        num_layers=6, dec_dim=hidden_dim, num_heads=8, dff=2048,
+        tgt_len=2048, tgt_vocab_size=vocab_size,
+    )
+    model = Transformer(feature_extractor, encoder, decoder, hidden_dim, vocab_size)
+
+    logits = model(fbank_feature, feat_lens, labels)
+    print(f"logits shape: {logits.shape}")
+    # 输出：logits shape: torch.Size([16, 50, 26])
