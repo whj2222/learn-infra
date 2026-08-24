@@ -220,7 +220,40 @@ class Decoder(nn.Module):
             dec_out = layer(dec_out, enc_out, dec_mask, dec_enc_mask)
         return dec_out
 
+class Transformer(nn.Module):
+    def __init__(self, frontend: nn.Module, encoder: Encoder, decoder: Decoder, dec_out_dim: int, vocab: int):
+        """
+        :param frontend: 输入特征变换
+        :param dec_out_dim: decoder输出维度=d_model
+        :param vocab: 目标词表大小
+        """
+        super(Transformer, self).__init__()
+        self.frontend = frontend
+        self.encoder = encoder
+        self.decoder = decoder
+        self.linear = nn.Linear(dec_out_dim, vocab)
 
+    def forward(self, X: torch.tensor, X_lens: torch.Tensor, labels: torch.Tensor):
+        """
+        X:      (batch, enc_len, fbank_dim)  输入特征序列
+        X_lens: (batch,)                      每个样本的实际输入长度
+        labels: (batch, dec_len)              目标 token ID 序列
+        Returns: logits (batch, dec_len, vocab_size)
+        """
+        X_lens, labels = X_lens.long(), labels.long()
+        b, device = X.size(0), X.device
+
+        # Frontend + Encoder（对应第 3 节 Encoder 结构）
+        out = self.frontend(X)
+        max_feat_len = out.size(1)
+        enc_mask = get_len_mask(b, max_feat_len, X_lens, device)
+        enc_out = self.encoder(out, X_lens, enc_mask)
+
+        # Decoder（对应第 4 节 Decoder 结构）
+        max_label_len = labels.size(1)
+        dec_mask = get_subsequent_mask(b, max_label_len, device)
+        dec_enc_mask = get_enc_dec_mask(b, max_feat_len, X_lens, max_label_len, device)
+        dec_out = self.decoder(labels, enc_out, dec_mask, dec_enc_mask)
 
 
 if __name__ == "__main__":
