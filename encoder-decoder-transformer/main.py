@@ -162,6 +162,40 @@ class Encoder(nn.Module):
             out = layer(out, mask)
         return out
 
+class DecoderLayer(nn.Module):
+    def __init__(self, dim: int, n: int, dff: int, dropout_posffn: float, dropout_attn: float):
+        assert dim % n == 0
+        super(DecoderLayer, self).__init__()
+        hdim = dim // n
+
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
+        self.norm3 = nn.LayerNorm(dim)
+        self.poswise_ffn = PoswiseFFN(dim, dff, p=dropout_posffn)
+        self.dec_attn = MultiHeadAttention(hdim, hdim, dim, n, dropout_attn)
+        self.dec_enc_attn = MultiHeadAttention(hdim, hdim, dim, n, dropout_attn)
+
+    def forward(self, dec_in, enc_out, dec_mask, dec_enc_mask):
+        """
+        :param dec_in: (batch, dec_len, d_model) decoder当前层输入
+        :param dec_out: (batch, enc_len, d_model) encoder输出
+        :param dec_mask: (batch, dec_len, dec_len) causal mask
+        :param dec_enc_mask: (batch, dec_len, enc_len) cross attention mask
+        """
+        residual = dec_in
+        context = self.dec_attn(dec_in, dec_in, dec_in, dec_mask)
+        dec_out = self.norm1(residual + context)
+
+        residual = dec_out
+        context = self.dec_enc_attn(dec_out, enc_out, enc_out, dec_enc_mask)
+        dec_out = self.norm2(residual + context)
+
+        residual = dec_out
+        dec_out = self.poswise_ffn(dec_out)
+        dec_out = self.norm3(dec_out + residual)
+        return dec_out
+
+
 
 
 
