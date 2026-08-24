@@ -138,11 +138,30 @@ class EncoderLayer(nn.Module):
         residual = enc_in
         context = self.multi_head_attn(enc_in, enc_in, enc_in, attn_mask)
         out = self.norm1(context + residual)
-        
+
         residual = out
         out = self.poswise_ffn(out)
         out = self.norm2(out + residual)
         return out
+
+class Encoder(nn.Module):
+    def __init__(self, dropout_emb, dropout_posffn, dropout_attn, num_layers, enc_dim, num_heads, dff, tgt_len):
+        super(Encoder, self).__init__()
+        self.tgt_len = tgt_len
+        # 固定的正弦位置编码
+        self.pos_emb = nn.Embedding.from_pretrained(pos_sinusoid_embedding(tgt_len, enc_dim), freeze=True)
+        self.emb_dropout = dropout_emb
+        self.layers = nn.ModuleList([EncoderLayer(enc_dim, num_heads, dff, dropout_posffn, dropout_attn) for _ in range(num_layers)])
+
+    def forward(self, X, X_lens, mask=None):
+        # X = (batch, seq_len, d_model)
+        seq_len = X.size(1)
+        out = X + self.pos_emb(torch.arange(seq_len, device=X.device))
+        out = self.emb_dropout(out)
+        for layer in self.layers:
+            out = layer(out, mask)
+        return out
+
 
 
 
