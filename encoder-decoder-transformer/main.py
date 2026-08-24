@@ -77,9 +77,9 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(p)
 
         # 四个线性投影矩阵：Q、K、V投影和输出投影
-        self.W_Q = nn.Linear(self.dmodel, self.d_k * num_heads)
-        self.W_K = nn.Linear(self.dmodel, self.d_k * num_heads)
-        self.W_V = nn.Linear(self.dmodel, self.d_v * num_heads)
+        self.W_Q = nn.Linear(self.d_model, self.d_k * num_heads)
+        self.W_K = nn.Linear(self.d_model, self.d_k * num_heads)
+        self.W_V = nn.Linear(self.d_model, self.d_v * num_heads)
         self.W_out = nn.Linear(self.d_v * num_heads, self.d_model)
 
         # 权重初始化
@@ -108,7 +108,7 @@ class MultiHeadAttention(nn.Module):
 
         # 广播Mask到head维度
         if attn_mask is not None:
-            assert attn_mask.size == (N, q_len, k_len)
+            assert attn_mask.size() == (N, q_len, k_len)
             attn_mask = attn_mask.unsqueeze(1).repeat(1, num_heads, 1, 1).bool()
 
         # 相乘
@@ -119,7 +119,7 @@ class MultiHeadAttention(nn.Module):
         attns = self.dropout(attns)
 
         output = torch.matmul(attns, V)
-        output = output.transpose(1, 2).contiguous().reshape(V, q_len, num_heads * d_v)
+        output = output.transpose(1, 2).contiguous().reshape(N, q_len, num_heads * d_v)
         output = self.W_out(output)
         return output
 
@@ -129,8 +129,8 @@ class EncoderLayer(nn.Module):
         super(EncoderLayer, self).__init__()
         hdim = dim // n
 
-        self.norm1 = nn.LayerNorm()
-        self.norm2 = nn.LayerNorm()
+        self.norm1 = nn.LayerNorm(dim)
+        self.norm2 = nn.LayerNorm(dim)
         self.multi_head_attn = MultiHeadAttention(hdim, hdim, dim, n, dropout_attn)
         self.poswise_ffn = PoswiseFFN(dim, dff, dropout_posffn)
 
@@ -150,7 +150,7 @@ class Encoder(nn.Module):
         self.tgt_len = tgt_len
         # 固定的正弦位置编码
         self.pos_emb = nn.Embedding.from_pretrained(pos_sinusoid_embedding(tgt_len, enc_dim), freeze=True)
-        self.emb_dropout = dropout_emb
+        self.emb_dropout = nn.Dropout(dropout_emb)
         self.layers = nn.ModuleList([EncoderLayer(enc_dim, num_heads, dff, dropout_posffn, dropout_attn) for _ in range(num_layers)])
 
     def forward(self, X, X_lens, mask=None):
@@ -252,8 +252,10 @@ class Transformer(nn.Module):
         # Decoder（对应第 4 节 Decoder 结构）
         max_label_len = labels.size(1)
         dec_mask = get_subsequent_mask(b, max_label_len, device)
-        dec_enc_mask = get_enc_dec_mask(b, max_feat_len, X_lens, max_label_len, device)
+        dec_enc_mask = get_enc_dec_mask(b, max_label_len, max_feat_len, X_lens, device)
         dec_out = self.decoder(labels, enc_out, dec_mask, dec_enc_mask)
+
+        return self.linear(dec_out)
 
 
 if __name__ == "__main__":
@@ -279,7 +281,6 @@ if __name__ == "__main__":
         tgt_len=2048, tgt_vocab_size=vocab_size,
     )
     model = Transformer(feature_extractor, encoder, decoder, hidden_dim, vocab_size)
-
     logits = model(fbank_feature, feat_lens, labels)
     print(f"logits shape: {logits.shape}")
     # 输出：logits shape: torch.Size([16, 50, 26])
