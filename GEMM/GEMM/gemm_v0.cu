@@ -17,6 +17,19 @@
 
 #define BLOCK_SIZE 32
 
+//Launching kernel with Grid(32, 32), Block(32, 32)...
+//Verifying results on CPU...
+//Result verification : PASSED
+//
+//Performance Report :
+//Matrix Size : 1024 x 1024 x 1024
+//Total Data : 12.00 MB
+//Total Ops : 2.15 GFLOPs
+//Time(avg) : 9.396 ms
+//Throughput : 228.56 GFLOPS
+//Bandwidth : 1.34 GB / s
+
+
 __global__ void gemm_v0(const float* A, const float* B, float* C, int M, int N, int K)
 {
 	int row = blockDim.y * blockIdx.y + threadIdx.y;
