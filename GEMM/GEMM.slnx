@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="GEMM/GEMM.vcxproj" />
+  <Project Path="GEMM/GEMM.vcxproj" Id="ac200a0a-fbc8-4c8c-b14c-bcaec94f1303" />
 </Solution>
