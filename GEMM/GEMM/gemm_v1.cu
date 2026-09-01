@@ -15,24 +15,64 @@
 #define MATRIX_N 1024
 #define MATRIX_K 1024
 
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 256
 
 
-
+template <int BM, int BN, int BK, int THREADS>
 __global__ void gemm_v1(const float* A, const float* B, float* C, int M, int N, int K)
 {
-	int row = blockDim.y * blockIdx.y + threadIdx.y;
-	int col = blockDim.x * blockIdx.x + threadIdx.x;
+	__shared__ float As[BM][BK];
+	__shared__ float Bs[BK][BN];
 
-	if (row < M && col < N)
+	int r0 = blockIdx.y * BM;
+	int c0 = blockIdx.x * BN;
+	int tid = threadIdx.x;
+
+	// 加载tileA时的线程重排
+	constexpr int A_BLOCK_X = BK;
+	constexpr int A_BLOCK_Y = BLOCK_SIZE / BK;
+	int a_thread_x = tid % A_BLOCK_X;
+	int a_thread_y = tid / A_BLOCK_X;
+	
+	// 加载tileB时的线程重排
+	constexpr int B_BLOCK_X = 32;
+	constexpr int B_BLOCK_Y = BLOCK_SIZE / B_BLOCK_Y;
+	int b_thread_x = tid % B_BLOCK_X;
+	int b_thread_y = tid / B_BLOCK_X;
+
+	// 加载tileC时的线程重排
+	constexpr int C_BLOCK_X = 16;
+	constexpr int C_BLOCK_Y = 256 / C_BLOCK_X;
+	int c_thread_x = tid % C_BLOCK_X;
+	int c_thread_y = tid / C_BLOCK_Y;
+
+	// 每个线程负责 Tm * Tn 个输出元素
+	constexpr int Tm = BM / C_BLOCK_Y;
+	constexpr int Tn = BN / C_BLOCK_X;
+	float Ct[Tm][Tm] = { 0.0f };
+
+	for (int k = 0;k < K;k += BK)
 	{
-		float sum = 0.0f;
-		for (int k = 0;k < K;k++)
+		// 加载tileA
+		#pragma unroll
+		for (int i = a_thread_y;i < BM;i += A_BLOCK_Y)
 		{
-			sum += A[K * row + k] * B[N * k + col];
+			r = r0 + i, c = k + a_thread_x;
+			As[i][a_thread_x] = (r < M && c < K) ? A[r * K + c] : 0.0f;
 		}
-		C[row * N + col] = sum;
+
+		// 加载tileB
+		#pragma unroll
+		for (int j = b_thread_x; j < BN;j += B_BLOCK_X)
+		{
+			r = k + b_thread_x, c = c0 + j;
+			Bs[b_thread_y][j] = (r < K && c < N) ? A[N * r + c] : 0.0f;
+		}
+
+		__syncthreads();
+
 	}
+
 }
 
 
