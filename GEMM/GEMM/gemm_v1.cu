@@ -36,7 +36,7 @@ __global__ void gemm_v1(const float* A, const float* B, float* C, int M, int N, 
 	
 	// 加载tileB时的线程重排
 	constexpr int B_BLOCK_X = 32;
-	constexpr int B_BLOCK_Y = BLOCK_SIZE / B_BLOCK_Y;
+	constexpr int B_BLOCK_Y = BLOCK_SIZE / B_BLOCK_X;
 	int b_thread_x = tid % B_BLOCK_X;
 	int b_thread_y = tid / B_BLOCK_X;
 
@@ -44,12 +44,12 @@ __global__ void gemm_v1(const float* A, const float* B, float* C, int M, int N, 
 	constexpr int C_BLOCK_X = 16;
 	constexpr int C_BLOCK_Y = 256 / C_BLOCK_X;
 	int c_thread_x = tid % C_BLOCK_X;
-	int c_thread_y = tid / C_BLOCK_Y;
+	int c_thread_y = tid / C_BLOCK_X;
 
 	// 每个线程负责 Tm * Tn 个输出元素
 	constexpr int Tm = BM / C_BLOCK_Y;
 	constexpr int Tn = BN / C_BLOCK_X;
-	float Ct[Tm][Tm] = { 0.0f };
+	float Ct[Tm][Tn] = { 0.0f };
 
 	for (int k = 0;k < K;k += BK)
 	{
@@ -57,7 +57,7 @@ __global__ void gemm_v1(const float* A, const float* B, float* C, int M, int N, 
 		#pragma unroll
 		for (int i = a_thread_y;i < BM;i += A_BLOCK_Y)
 		{
-			r = r0 + i, c = k + a_thread_x;
+			int r = r0 + i, c = k + a_thread_x;
 			As[i][a_thread_x] = (r < M && c < K) ? A[r * K + c] : 0.0f;
 		}
 
@@ -65,12 +65,36 @@ __global__ void gemm_v1(const float* A, const float* B, float* C, int M, int N, 
 		#pragma unroll
 		for (int j = b_thread_x; j < BN;j += B_BLOCK_X)
 		{
-			r = k + b_thread_x, c = c0 + j;
-			Bs[b_thread_y][j] = (r < K && c < N) ? A[N * r + c] : 0.0f;
+			int r = k + b_thread_y, c = c0 + j;
+			Bs[b_thread_y][j] = (r < K && c < N) ? B[N * r + c] : 0.0f;
 		}
 
 		__syncthreads();
 
+
+		// 外积计算
+		#pragma unroll
+		for (int p = 0; p < BK; p++) {
+			for (int i = 0; i < Tm; i++) {
+				int row = c_thread_y + i * C_BLOCK_Y;
+				for (int j = 0; j < Tn; j++) {
+					int col = c_thread_x + j * C_BLOCK_X;
+					Ct[i][j] += As[row][p] * Bs[p][col];
+				}
+			}
+		}
+		__syncthreads();
+	}
+	
+
+	for (int i = 0;i < Tm;i++)
+	{
+		int r = r0 + c_thread_y + i * C_BLOCK_Y;
+		for (int j = 0;j < Tn;j++)
+		{
+			int c = c0 + c_thread_x + j * C_BLOCK_X;
+			if (r < M && c < N) C[r * N + c] = Ct[i][j];
+		}
 	}
 
 }
@@ -118,15 +142,15 @@ int main()
 	CUDA_CHECK(cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice));
 
 	// 设置Kernel配置
-	dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
-	dim3 gridSize(((N + blockSize.x - 1) / blockSize.x), (M + blockSize.y - 1) / blockSize.y);
-	printf("Launching kernel with Grid(%d, %d), Block(%d, %d)...\n",
-		gridSize.x, gridSize.y, blockSize.x, blockSize.y);
+	dim3 blockSize(BLOCK_SIZE);                        
+	dim3 gridSize((N + 128 - 1) / 128, (M + 128 - 1) / 128);   
+	printf("Launching kernel with Grid(%d, %d), Block(%d)...\n",
+		gridSize.x, gridSize.y, blockSize.x);
 
 	// warm up
 	for (int i = 0;i < 20;i++)
 	{
-		gemm_v1 << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v1<128, 128, 8, 256> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaGetLastError());
 	CUDA_CHECK(cudaDeviceSynchronize());
@@ -141,7 +165,7 @@ int main()
 	CUDA_CHECK(cudaEventRecord(start));
 	for (int r = 0;r < repeats;r++)
 	{
-		gemm_v1 << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v1<128, 128, 8, 256> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaEventRecord(stop));
 	CUDA_CHECK(cudaEventSynchronize(stop));
