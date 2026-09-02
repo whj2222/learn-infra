@@ -17,6 +17,17 @@
 
 #define BLOCK_SIZE 256
 
+//Launching kernel with Grid(8, 8), Block(256)...
+//Verifying results on CPU...
+//Result verification : PASSED
+//
+//Performance Report :
+//Matrix Size : 1024 x 1024 x 1024
+//Total Data : 12.00 MB
+//Total Ops : 2.15 GFLOPs
+//Time(avg) : 3.105 ms
+//Throughput : 691.54 GFLOPS
+//Bandwidth : 4.05 GB / s
 
 template <int BM, int BN, int BK, int THREADS>
 __global__ void gemm_v1(const float* A, const float* B, float* C, int M, int N, int K)
