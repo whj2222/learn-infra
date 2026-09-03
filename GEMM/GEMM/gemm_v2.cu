@@ -46,7 +46,7 @@ __device__ inline void load_tile_B(const float* B, float (*Bs)[BN],
 	}
 }
 
-template <int BM, int BN, int BK>
+template <int BM, int BN, int BK, int TM, int TN>
 __global__ void gemm_v2(const float* A, const float* B, float* C, int M, int N, int K)
 {
 	__shared__ float As[BM][BK];
@@ -58,7 +58,7 @@ __global__ void gemm_v2(const float* A, const float* B, float* C, int M, int N, 
 
 	float a_frag[TM];
 	float b_frag[TN];
-	float c_frag[TM][TN];
+	float c_frag[TM][TN] = {0.0f};
 
 	int by = blockIdx.y, bx = blockIdx.x;
 
@@ -79,9 +79,25 @@ __global__ void gemm_v2(const float* A, const float* B, float* C, int M, int N, 
 			}
 			for (int j = 0;j < TN;j++)
 			{
-				b_frag[j] = BS[k][thread_col + j];
+				b_frag[j] = Bs[k][thread_col + j];
 			}
 
+			for (int i = 0;i < TM;i++)
+			{
+				for (int j = 0;j < TN;j++)
+				{
+					c_frag[i][j] += a_frag[i] * b_frag[j];
+				}
+			}
+		}
+		__syncthreads();
+	}
+	// 写回
+	for (int i = 0;i < TM;i++)
+	{
+		for (int j = 0;j < TN;j++)
+		{
+			C[(by * BM + thread_row + i) * N + BN * bx + thread_col + j] = c_frag[i][j];
 		}
 	}
 
@@ -138,7 +154,7 @@ int main()
 	// warm up
 	for (int i = 0;i < 20;i++)
 	{
-		gemm_v2<128, 128, 8, 256> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v2<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaGetLastError());
 	CUDA_CHECK(cudaDeviceSynchronize());
@@ -153,7 +169,7 @@ int main()
 	CUDA_CHECK(cudaEventRecord(start));
 	for (int r = 0;r < repeats;r++)
 	{
-		gemm_v2<128, 128, 8, 256> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v2<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaEventRecord(stop));
 	CUDA_CHECK(cudaEventSynchronize(stop));
