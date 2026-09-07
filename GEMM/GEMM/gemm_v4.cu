@@ -17,6 +17,8 @@
 
 #define BLOCK_SIZE 256
 
+#define FLOAT4(ptr) (reinterpret_cast<float4*>(&(ptr))[0])
+
 
 
 // THREADS = BM/TM * BN/TN
@@ -81,15 +83,16 @@ __global__ void gemm_v4(const float* A, const float* B, float* C, int M, int N, 
 		// 外积累加
 		for (int k = 0;k < BK;k++)
 		{
-			for (int i = 0;i < TM;i++)
+			#pragma unroll
+			for (int i = 0;i < TM;i += 4)
 			{
-				a_frag[i] = As[k][thread_row + i];
+				FLOAT4(a_frag[i]) = FLOAT4(As[k][thread_row + i]);
 			}
-			for (int j = 0;j < TN;j++)
+			#pragma unroll
+			for (int j = 0;j < TN;j += 4)
 			{
-				b_frag[j] = Bs[k][thread_col + j];
+				FLOAT4(b_frag[j]) = FLOAT4(Bs[k][thread_col + j]);
 			}
-
 			for (int i = 0;i < TM;i++)
 			{
 				for (int j = 0;j < TN;j++)
@@ -103,9 +106,9 @@ __global__ void gemm_v4(const float* A, const float* B, float* C, int M, int N, 
 	// 写回
 	for (int i = 0;i < TM;i++)
 	{
-		for (int j = 0;j < TN;j++)
+		for (int j = 0;j < TN;j += 4)
 		{
-			C[(by * BM + thread_row + i) * N + BN * bx + thread_col + j] = c_frag[i][j];
+			FLOAT4(C[(by * BM + thread_row + i) * N + BN * bx + thread_col + j]) = FLOAT4(c_frag[i][j]);
 		}
 	}
 

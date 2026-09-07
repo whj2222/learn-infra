@@ -29,6 +29,7 @@
 //Throughput : 571.33 GFLOPS
 //Bandwidth : 3.35 GB / s
 
+
 // THREADS = BM/TM * BN/TN
 template <int BM, int BK, int THREADS>
 __device__ inline void load_tile_A(const float* A, float (*As)[BK],
