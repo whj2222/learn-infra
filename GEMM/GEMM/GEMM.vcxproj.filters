@@ -24,5 +24,11 @@
     <CudaCompile Include="gemm_v2.cu">
       <Filter>源文件</Filter>
     </CudaCompile>
+    <CudaCompile Include="gemm_v3.cu">
+      <Filter>源文件</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gemm_v4.cu">
+      <Filter>源文件</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

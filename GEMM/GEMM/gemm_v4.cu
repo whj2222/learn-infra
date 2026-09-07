@@ -17,21 +17,11 @@
 
 #define BLOCK_SIZE 256
 
-//Launching kernel with Grid(8, 8), Block(256)...
-//Verifying results on CPU...
-//Result verification : PASSED
-//
-//Performance Report :
-//Matrix Size : 1024 x 1024 x 1024
-//Total Data : 12.00 MB
-//Total Ops : 2.15 GFLOPs
-//Time(avg) : 3.947 ms
-//Throughput : 544.06 GFLOPS
-//Bandwidth : 3.19 GB / s
+
 
 // THREADS = BM/TM * BN/TN
 template <int BM, int BK, int THREADS>
-__device__ inline void load_tile_A(const float* A, float (*As)[BK],
+__device__ inline void load_tile_A(const float* A, float (*As)[BM],
 	int by, int bk, int tid, int M, int K) {
 	constexpr int STRIDE = THREADS / BK;      // 256/8 = 32
 	const int row = tid / BK;                 // 0..31
@@ -40,7 +30,7 @@ __device__ inline void load_tile_A(const float* A, float (*As)[BK],
 	for (int i = 0; i < BM; i += STRIDE) {    // 4 次，覆盖 128 行
 		int gr = by * BM + row + i;
 		int gc = bk + col;
-		As[row + i][col] = (gr < M && gc < K) ? A[(size_t)gr * K + gc] : 0.0f;
+		As[col][row + i] = (gr < M && gc < K) ? A[(size_t)gr * K + gc] : 0.0f;
 	}
 }
 
@@ -59,18 +49,24 @@ __device__ inline void load_tile_B(const float* B, float (*Bs)[BN],
 }
 
 template <int BM, int BN, int BK, int TM, int TN>
-__global__ void gemm_v2(const float* A, const float* B, float* C, int M, int N, int K)
+__global__ void gemm_v4(const float* A, const float* B, float* C, int M, int N, int K)
 {
-	__shared__ float As[BM][BK];
+	__shared__ float As[BK][BM];
 	__shared__ float Bs[BK][BN];
 
 	int tid = threadIdx.x;
-	int thread_row = (tid / (BN / TN)) * TM;
-	int thread_col = (tid % (BN / TN)) * TN;
+	int warpid = tid / 32;
+	int laneid = tid % 32;
+	int warp_row = warpid / 2;
+	int warp_col = warpid % 2;
+	int lane_row = laneid / 8;
+	int lane_col = laneid % 8;
+	int thread_row = (warp_row * 4 + lane_row) * TM;
+	int thread_col = (warp_col * 8 + lane_col) * TN;
 
 	float a_frag[TM];
 	float b_frag[TN];
-	float c_frag[TM][TN] = {0.0f};
+	float c_frag[TM][TN] = { 0.0f };
 
 	int by = blockIdx.y, bx = blockIdx.x;
 
@@ -87,7 +83,7 @@ __global__ void gemm_v2(const float* A, const float* B, float* C, int M, int N, 
 		{
 			for (int i = 0;i < TM;i++)
 			{
-				a_frag[i] = As[thread_row + i][k];
+				a_frag[i] = As[k][thread_row + i];
 			}
 			for (int j = 0;j < TN;j++)
 			{
@@ -166,7 +162,7 @@ int main()
 	// warm up
 	for (int i = 0;i < 20;i++)
 	{
-		gemm_v2<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v4<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaGetLastError());
 	CUDA_CHECK(cudaDeviceSynchronize());
@@ -181,7 +177,7 @@ int main()
 	CUDA_CHECK(cudaEventRecord(start));
 	for (int r = 0;r < repeats;r++)
 	{
-		gemm_v2<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v4<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaEventRecord(stop));
 	CUDA_CHECK(cudaEventSynchronize(stop));
