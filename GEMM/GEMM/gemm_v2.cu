@@ -65,6 +65,8 @@ __global__ void gemm_v2(const float* A, const float* B, float* C, int M, int N, 
 	__shared__ float Bs[BK][BN];
 
 	int tid = threadIdx.x;
+	int warpid = tid / 32;
+	int laneid = tid 
 	int thread_row = (tid / (BN / TN)) * TM;
 	int thread_col = (tid % (BN / TN)) * TN;
 

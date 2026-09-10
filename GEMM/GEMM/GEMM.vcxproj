@@ -43,7 +43,19 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </CudaCompile>
-    <CudaCompile Include="gemm_v4.cu" />
+    <CudaCompile Include="gemm_v4.cu">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </CudaCompile>
+    <CudaCompile Include="gemm_v5.cu">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </CudaCompile>
+    <CudaCompile Include="gemm_v6.cu" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
@@ -114,7 +126,7 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <CudaCompile>
-      <GenerateLineInfo>false</GenerateLineInfo>
+      <GenerateLineInfo>true</GenerateLineInfo>
       <GPUDebugInfo>false</GPUDebugInfo>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -136,7 +148,7 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <CudaCompile>
-      <GenerateLineInfo>false</GenerateLineInfo>
+      <GenerateLineInfo>true</GenerateLineInfo>
       <GPUDebugInfo>false</GPUDebugInfo>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -156,7 +168,7 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <CudaCompile>
-      <GenerateLineInfo>false</GenerateLineInfo>
+      <GenerateLineInfo>true</GenerateLineInfo>
       <GPUDebugInfo>false</GPUDebugInfo>
     </CudaCompile>
   </ItemDefinitionGroup>
@@ -178,7 +190,7 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
     <CudaCompile>
-      <GenerateLineInfo>false</GenerateLineInfo>
+      <GenerateLineInfo>true</GenerateLineInfo>
       <GPUDebugInfo>false</GPUDebugInfo>
     </CudaCompile>
   </ItemDefinitionGroup>

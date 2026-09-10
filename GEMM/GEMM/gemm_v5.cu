@@ -27,13 +27,14 @@
 //Matrix Size : 1024 x 1024 x 1024
 //Total Data : 12.00 MB
 //Total Ops : 2.15 GFLOPs
-//Time(avg) : 2.495 ms
-//Throughput : 860.67 GFLOPS
-//Bandwidth : 5.04 GB / s
+//Time(avg) : 2.291 ms
+//Throughput : 937.16 GFLOPS
+//Bandwidth : 5.49 GB / s
+//请按任意键继续. . .
 
 // THREADS = BM/TM * BN/TN
 template <int BM, int BK, int THREADS>
-__device__ inline void load_tile_A(const float* A, float (*As)[BM],
+__device__ inline void load_tile_A(const float* A, float (*As)[BM + 4],
 	int by, int bk, int tid, int M, int K) {
 	constexpr int STRIDE = THREADS / BK;      // 256/8 = 32
 	const int row = tid / BK;                 // 0..31
@@ -45,6 +46,7 @@ __device__ inline void load_tile_A(const float* A, float (*As)[BM],
 		As[col][row + i] = (gr < M && gc < K) ? A[(size_t)gr * K + gc] : 0.0f;
 	}
 }
+
 
 template <int BK, int BN, int THREADS>
 __device__ inline void load_tile_B(const float* B, float (*Bs)[BN],
@@ -61,9 +63,9 @@ __device__ inline void load_tile_B(const float* B, float (*Bs)[BN],
 }
 
 template <int BM, int BN, int BK, int TM, int TN>
-__global__ void gemm_v4(const float* A, const float* B, float* C, int M, int N, int K)
+__global__ void gemm_v5(const float* A, const float* B, float* C, int M, int N, int K)
 {
-	__shared__ float As[BK][BM];
+	__shared__ float As[BK][BM + 4];
 	__shared__ float Bs[BK][BN];
 
 	int tid = threadIdx.x;
@@ -71,8 +73,8 @@ __global__ void gemm_v4(const float* A, const float* B, float* C, int M, int N, 
 	int laneid = tid % 32;
 	int warp_row = warpid / 2;
 	int warp_col = warpid % 2;
-	int lane_row = laneid / 8;
-	int lane_col = laneid % 8;
+	int lane_row = laneid % 2 + (laneid / 16) * 2;
+	int lane_col = (laneid % 16) / 2;
 	int thread_row = (warp_row * 4 + lane_row) * TM;
 	int thread_col = (warp_col * 8 + lane_col) * TN;
 
@@ -93,12 +95,12 @@ __global__ void gemm_v4(const float* A, const float* B, float* C, int M, int N, 
 		// 外积累加
 		for (int k = 0;k < BK;k++)
 		{
-			#pragma unroll
+#pragma unroll
 			for (int i = 0;i < TM;i += 4)
 			{
 				FLOAT4(a_frag[i]) = FLOAT4(As[k][thread_row + i]);
 			}
-			#pragma unroll
+#pragma unroll
 			for (int j = 0;j < TN;j += 4)
 			{
 				FLOAT4(b_frag[j]) = FLOAT4(Bs[k][thread_col + j]);
@@ -175,7 +177,7 @@ int main()
 	// warm up
 	for (int i = 0;i < 20;i++)
 	{
-		gemm_v4<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v5<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaGetLastError());
 	CUDA_CHECK(cudaDeviceSynchronize());
@@ -190,7 +192,7 @@ int main()
 	CUDA_CHECK(cudaEventRecord(start));
 	for (int r = 0;r < repeats;r++)
 	{
-		gemm_v4<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
+		gemm_v5<128, 128, 8, 8, 8> << <gridSize, blockSize >> > (d_A, d_B, d_C, M, N, K);
 	}
 	CUDA_CHECK(cudaEventRecord(stop));
 	CUDA_CHECK(cudaEventSynchronize(stop));
