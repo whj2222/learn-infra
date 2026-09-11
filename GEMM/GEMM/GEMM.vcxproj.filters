@@ -36,5 +36,8 @@
     <CudaCompile Include="gemm_v6.cu">
       <Filter>源文件</Filter>
     </CudaCompile>
+    <CudaCompile Include="cublas.cu">
+      <Filter>源文件</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>
