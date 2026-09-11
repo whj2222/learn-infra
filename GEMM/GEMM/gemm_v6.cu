@@ -28,17 +28,17 @@
 //Matrix Size : 1024 x 1024 x 1024
 //Total Data : 12.00 MB
 //Total Ops : 2.15 GFLOPs
-//Time(avg) : 1.926 ms
-//Throughput : 1115.06 GFLOPS
-//Bandwidth : 6.53 GB / s
+//Time(avg) : 1.975 ms
+//Throughput : 1087.13 GFLOPS
+//Bandwidth : 6.37 GB / s
 
 
 
 template <int BM, int BN, int BK, int TM, int TN>
 __global__ void gemm_v6(const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C, int M, int N, int K)
 {
-	__shared__ float As[BK][BM + 4];
-	__shared__ float Bs[BK][BN];
+	__shared__ __align__(16) float As[2][BK][BM + 4];
+	__shared__ __align__(16) float Bs[2][BK][BN];
 
 	int tid = threadIdx.x;
 	int warpid = tid / 32;
@@ -67,44 +67,73 @@ __global__ void gemm_v6(const float* __restrict__ A, const float* __restrict__ B
 	const int col_b = tid % (BN / 4) * 4;                 // 0,4...,124
 	const float* B_ptr = B + row_b * N + bx * BN + col_b;
 
-	for (int bk = 0;bk < K;bk += BK)
+	float4 ldg_a, ldg_b;    // 用 float4，自带 16B 对齐
+	int buf = 0;
+
+	// 先搬 tile 0
+	ldg_a = CFLOAT4(A_ptr[0]);
+	ldg_b = CFLOAT4(B_ptr[0]);
+
+	As[0][col_a + 0][row_a] = ldg_a.x;
+	As[0][col_a + 1][row_a] = ldg_a.y;
+	As[0][col_a + 2][row_a] = ldg_a.z;
+	As[0][col_a + 3][row_a] = ldg_a.w;
+	FLOAT4(Bs[0][row_b][col_b]) = ldg_b;
+	__syncthreads();
+
+	// 灌注 k=0
+#pragma unroll
+	for (int i = 0; i < TM; i += 4) FLOAT4(a_frag[0][i]) = FLOAT4(As[0][0][thread_row + i]);
+#pragma unroll
+	for (int j = 0; j < TN; j += 4) FLOAT4(b_frag[0][j]) = FLOAT4(Bs[0][0][thread_col + j]);
+
+	for (int bk = 0; bk < K; bk += BK)
 	{
-		float ldg_a[4], ldg_b[4];
-		FLOAT4(ldg_a[0]) = CFLOAT4(A_ptr[bk]);
-		FLOAT4(ldg_b[0]) = CFLOAT4(B_ptr[bk * N]);
+		const bool has_next = (bk + BK < K);
 
-		// Load tile A
-#pragma unroll
-		for (int i = 0;i < 4;i++)
-		{
-			As[col_a + i][row_a] = ldg_a[i];
+		// [1] 提前发射下一 tile 的 LDG —— 关键位置
+		if (has_next) {
+			ldg_a = CFLOAT4(A_ptr[bk + BK]);
+			ldg_b = CFLOAT4(B_ptr[(size_t)(bk + BK) * N]);
 		}
-		FLOAT4(Bs[row_b][col_b]) = FLOAT4(ldg_b[0]);
 
-		// Load tile B
-		__syncthreads();
-
-		// 外积累加
+		// [2] Step 4 的 k 循环，读 As[buf]
 #pragma unroll
-		for (int i = 0;i < TM;i += 4) FLOAT4(a_frag[0][i]) = FLOAT4(As[0][thread_row + i]);
-#pragma unroll
-		for (int j = 0;j < TN;j += 4) FLOAT4(b_frag[0][j]) = FLOAT4(Bs[0][thread_col + j]);
-#pragma unroll
-		for (int k = 0;k < BK;k++)
+		for (int k = 0; k < BK; k++)
 		{
-			if (k + 1 < BK)
-			{
+			if (k + 1 < BK) {
 #pragma unroll
-				for (int i = 0;i < TM;i += 4) FLOAT4(a_frag[(k + 1) & 1][i]) = FLOAT4(As[k + 1][thread_row + i]);
+				for (int i = 0; i < TM; i += 4)
+					FLOAT4(a_frag[(k + 1) & 1][i]) = FLOAT4(As[buf][k + 1][thread_row + i]);
 #pragma unroll
-				for (int j = 0;j < TN;j += 4) FLOAT4(b_frag[(k + 1) & 1][j]) = FLOAT4(Bs[k + 1][thread_col + j]);
+				for (int j = 0; j < TN; j += 4)
+					FLOAT4(b_frag[(k + 1) & 1][j]) = FLOAT4(Bs[buf][k + 1][thread_col + j]);
 			}
 #pragma unroll
-			for (int i = 0;i < TM;i++)
+			for (int i = 0; i < TM; i++)
 #pragma unroll
-				for (int j = 0;j < TN;j++) c_frag[i][j] += a_frag[k & 1][i] * b_frag[k & 1][j];
+				for (int j = 0; j < TN; j++)
+					c_frag[i][j] += a_frag[k & 1][i] * b_frag[k & 1][j];
 		}
-		__syncthreads();
+
+		// [3] 落盘到另一块 buffer，翻转，重新灌注
+		if (has_next) {
+			As[buf ^ 1][col_a + 0][row_a] = ldg_a.x;
+			As[buf ^ 1][col_a + 1][row_a] = ldg_a.y;
+			As[buf ^ 1][col_a + 2][row_a] = ldg_a.z;
+			As[buf ^ 1][col_a + 3][row_a] = ldg_a.w;
+			FLOAT4(Bs[buf ^ 1][row_b][col_b]) = ldg_b;
+			__syncthreads();
+
+			buf ^= 1;
+
+#pragma unroll
+			for (int i = 0; i < TM; i += 4)
+				FLOAT4(a_frag[0][i]) = FLOAT4(As[buf][0][thread_row + i]);
+#pragma unroll
+			for (int j = 0; j < TN; j += 4)
+				FLOAT4(b_frag[0][j]) = FLOAT4(Bs[buf][0][thread_col + j]);
+		}
 	}
 		// 写回
 #pragma unroll
